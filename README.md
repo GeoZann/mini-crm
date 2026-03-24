@@ -29,7 +29,7 @@ Mini CRM is a web-based application designed to manage customer relationships an
 
 ## Project Structure
 
-
+```
 MiniCRMProject/
 ├── client/                 # Frontend application
 │   ├── src/
@@ -41,6 +41,8 @@ MiniCRMProject/
 └── server/                # Backend application
     ├── server.js
     └── package.json
+```
+
 
 
 ## Components
