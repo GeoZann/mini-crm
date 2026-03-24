@@ -1,0 +1,12 @@
+# Node modules
+node_modules/
+client/node_modules/
+server/node_modules/
+
+# Environment variables (Αν έχεις αρχεία .env με κωδικούς)
+.env
+server/.env
+client/.env
+
+# Λοιπά άχρηστα αρχεία συστήματος
+.DS_Store
