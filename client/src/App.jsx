@@ -1,4 +1,4 @@
-import { useState, useEffect, useContext } from 'react';
+import { useState, useEffect, useContext, useRef } from 'react';
 import axios from 'axios';
 import { Container } from '@mui/material';
 import { BrowserRouter as Router, Routes, Route, Navigate } from 'react-router-dom';
@@ -17,9 +17,13 @@ function App() {
   const [customers, setCustomers] = useState([]);
   const [searchTerm, setSearchTerm] = useState('');
   const [hasSearched, setHasSearched] = useState(false);
+  const [loading, setLoading] = useState(false);
   const { showNotification } = useContext(NotificationContext);
+  
+  const debounceTimer = useRef(null);
 
   const fetchCustomers = async () => {
+    setLoading(true);
     try {
       const response = await axios.get('http://localhost:3000/api/customers', {
         params: { name: searchTerm },
@@ -38,7 +42,21 @@ function App() {
       } else {
         showNotification("Σφάλμα κατά την ανάκτηση των πελατών.", "error");
       }
+    } finally {
+      setLoading(false);
     }
+  };
+
+  const handleSearchChange = (value) => {
+    setSearchTerm(value);
+    
+    if (debounceTimer.current) {
+      clearTimeout(debounceTimer.current);
+    }
+    
+    debounceTimer.current = setTimeout(() => {
+      // The effect will handle fetching after state updates
+    }, 500);
   };
 
   const handleDeleteCustomer = async (id) => {
@@ -65,6 +83,15 @@ function App() {
     }
   }, [isAuthenticated]);
 
+  useEffect(() => {
+    if (isAuthenticated && searchTerm !== '') {
+      const timer = setTimeout(() => {
+        fetchCustomers();
+      }, 500);
+      return () => clearTimeout(timer);
+    }
+  }, [searchTerm, isAuthenticated]);
+
   return (
     <Router>
       {/* Δείχνουμε το Navbar ΜΟΝΟ αν ο χρήστης είναι συνδεδεμένος */}
@@ -82,8 +109,8 @@ function App() {
           <Route path="/" element={
             isAuthenticated ? (
               <>
-                <CustomerSearch searchTerm={searchTerm} onSearchChange={setSearchTerm} onSearchSubmit={fetchCustomers} />
-                <CustomerTable customers={customers} hasSearched={hasSearched} onDelete={handleDeleteCustomer} />
+                <CustomerSearch searchTerm={searchTerm} onSearchChange={handleSearchChange} onSearchSubmit={fetchCustomers} loading={loading} />
+                <CustomerTable customers={customers} hasSearched={hasSearched} onDelete={handleDeleteCustomer} loading={loading} />
               </>
             ) : <Navigate to="/login" />
           } />

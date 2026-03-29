@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { Table, TableBody, TableCell, TableContainer, TableHead, TableRow, Paper, Button, Collapse, Box, Typography, Chip } from '@mui/material';
+import { Table, TableBody, TableCell, TableContainer, TableHead, TableRow, Paper, Button, Collapse, Box, Typography, Chip, CircularProgress } from '@mui/material';
 import Interactions from './Interactions'; // Changed import from CustomerNotes to Interactions
 
 function Row({ customer, onDelete }) {
@@ -35,7 +35,15 @@ function Row({ customer, onDelete }) {
     );
 }
 
-export default function CustomerTable({ customers, hasSearched, onDelete }) {
+export default function CustomerTable({ customers, hasSearched, onDelete, loading }) {
+    if (loading) {
+        return (
+            <Box sx={{ display: 'flex', justifyContent: 'center', mt: 4 }}>
+                <CircularProgress />
+            </Box>
+        );
+    }
+
     if (hasSearched && customers.length === 0) {
         return <Typography variant="h6" sx={{ mt: 4, textAlign: 'center' }}>Δεν βρέθηκαν πελάτες.</Typography>;
     }

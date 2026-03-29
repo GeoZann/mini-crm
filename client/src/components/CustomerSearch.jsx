@@ -1,7 +1,6 @@
-import { Box, TextField, Button } from '@mui/material';
+import { Box, TextField, Button, CircularProgress } from '@mui/material';
 
-// Δέχεται 3 Props από τον Γονιό: την τιμή, τη συνάρτηση αλλαγής, και τη συνάρτηση του κλικ
-export default function CustomerSearch({ searchTerm, onSearchChange, onSearchSubmit }) {
+export default function CustomerSearch({ searchTerm, onSearchChange, onSearchSubmit, loading }) {
   return (
     <Box sx={{ display: 'flex', gap: 2, mb: 3 }}>
       <TextField
@@ -10,9 +9,16 @@ export default function CustomerSearch({ searchTerm, onSearchChange, onSearchSub
         variant="outlined"
         value={searchTerm}
         onChange={(e) => onSearchChange(e.target.value)}
+        disabled={loading}
       />
-      <Button variant="contained" color="primary" onClick={onSearchSubmit} sx={{ px: 4 }}>
-        Αναζήτηση
+      <Button 
+        variant="contained" 
+        color="primary" 
+        onClick={onSearchSubmit} 
+        sx={{ px: 4 }}
+        disabled={loading}
+      >
+        {loading ? <CircularProgress size={24} color="inherit" /> : "Αναζήτηση"}
       </Button>
     </Box>
   );
