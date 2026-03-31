@@ -1,37 +1,17 @@
-import { useState } from 'react';
-import { Table, TableBody, TableCell, TableContainer, TableHead, TableRow, Paper, Button, Collapse, Box, Typography, Chip, CircularProgress } from '@mui/material';
-import Interactions from './Interactions'; // Changed import from CustomerNotes to Interactions
+import { Table, TableBody, TableCell, TableContainer, TableHead, TableRow, Paper, Button, Box, Typography, Chip, CircularProgress } from '@mui/material';
 
 function Row({ customer, onDelete }) {
-    const [open, setOpen] = useState(false);
-
     return (
-        <>
-            <TableRow sx={{ '& > *': { borderBottom: 'unset' } }}>
-                <TableCell>{customer.FirstName || customer.firstName}</TableCell>
-                <TableCell>{customer.LastName || customer.lastName}</TableCell>
-                <TableCell>{customer.Email || customer.email}</TableCell>
-                <TableCell>
-                    <Button variant="outlined" size="small" onClick={() => setOpen(!open)} sx={{ mr: 1 }}>
-                        {/* Changed label from Notes to Interactions */}
-                        {open ? 'Αποκρυψη' : 'Κινησεις'}
-                    </Button>
-                    <Button variant="contained" color="error" size="small" onClick={() => onDelete(customer.ID || customer.id)}>
-                        Διαγραφη
-                    </Button>
-                </TableCell>
-            </TableRow>
-            <TableRow>
-                <TableCell style={{ paddingBottom: 0, paddingTop: 0 }} colSpan={4}>
-                    <Collapse in={open} timeout="auto" unmountOnExit>
-                        <Box sx={{ margin: 2 }}>
-                            {/* Rendering the new Interactions component inside the expanded row */}
-                            <Interactions customerId={customer.ID || customer.id} />
-                        </Box>
-                    </Collapse>
-                </TableCell>
-            </TableRow>
-        </>
+        <TableRow>
+            <TableCell>{customer.FirstName || customer.firstName}</TableCell>
+            <TableCell>{customer.LastName || customer.lastName}</TableCell>
+            <TableCell>{customer.Email || customer.email}</TableCell>
+            <TableCell>
+                <Button variant="contained" color="error" size="small" onClick={() => onDelete(customer.ID || customer.id)}>
+                    Διαγραφη
+                </Button>
+            </TableCell>
+        </TableRow>
     );
 }
 
