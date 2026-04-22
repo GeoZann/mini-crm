@@ -2,46 +2,33 @@ const express = require('express');
 const cors = require('cors');
 const sql = require('seriate');
 const jwt = require('jsonwebtoken');
-const bcrypt = require('bcryptjs');
-const rateLimit = require('express-rate-limit');
-require('dotenv').config();
 
 const app = express();
 app.use(cors());
 app.use(express.json());
 
-const JWT_SECRET = process.env.JWT_SECRET || 'default-secret-key'; 
+const JWT_SECRET = 'super_secret_key_123'; 
 
-// Set up database connection using seriate
+// Database configuration
 sql.setDefaultConfig({
-    server: process.env.DB_SERVER || "localhost", 
-    user: process.env.DB_USER || "crm_user",
-    password: process.env.DB_PASSWORD || "CrmPassword123!",
-    database: process.env.DB_NAME || "MiniCRM",
+    server: "localhost", 
+    user: "crm_user",
+    password: "CrmPassword123!",
+    database: "MiniCRM",
     options: {
-        encrypt: process.env.DB_ENCRYPT === 'true', 
-        trustServerCertificate: process.env.DB_TRUST_CERT === 'true'
+        encrypt: false, 
+        trustServerCertificate: true
     }
 });
 
-// Rate Limiting Middleware
-const loginLimiter = rateLimit({
-    windowMs: 15 * 60 * 1000, // 15 minutes
-    max: 5, // 5 attempts per windowMs
-    message: { error: "Too many login attempts, please try again later" },
-    standardHeaders: true,
-    legacyHeaders: false,
-});
+// --- HELPER FUNCTION: THE CLEANER ---
+// Isopedwnei tis "mpampouskes" tou Seriate kai epistrefei mono ta kathara dedomena (Objects)
+function extractData(result) {
+    if (!result) return [];
+    return result.flat(Infinity).filter(item => item && typeof item === 'object');
+}
 
-const generalLimiter = rateLimit({
-    windowMs: 15 * 60 * 1000,
-    max: 100, // 100 requests per 15 minutes
-    message: { error: "Too many requests, please try again later" },
-});
-
-app.use(generalLimiter);
-
-// Middleware for JWT Authentication
+// JWT Authentication Middleware
 function authenticateToken(req, res, next) {
     const authHeader = req.headers['authorization'];
     const token = authHeader && authHeader.split(' ')[1];
@@ -55,30 +42,29 @@ function authenticateToken(req, res, next) {
 }
 
 // AUTH & USERS ROUTES
-app.post('/api/login', loginLimiter, async (req, res) => {
+app.post('/api/login', async (req, res) => {
     const { username, password } = req.body;
     
-    // Basic validation
     if (!username || !password) {
         return res.status(400).json({ error: "Username and password are required" });
     }
     
     try {
-        const queryText = `SELECT * FROM Users WHERE Username = @username`;
         const result = await sql.execute({ 
-            query: queryText,
+            procedure: "sp_GetUserByUsername",
             params: { 
-                username: { val: username, type: sql.VARCHAR(255) }
+                username: { val: username, type: sql.VARCHAR }
             }
         });
         
-        if (result && result.length > 0) {
-            const user = result[0];
+        const flatResult = extractData(result);
+        const user = flatResult.find(item => item.Password !== undefined);
+        
+        if (user) {
+            const safeInputPassword = String(password).trim();
+            const safeDbPassword = String(user.Password).trim();
             
-            // Compare passwords using bcrypt
-            const isPasswordValid = await bcrypt.compare(password, user.Password);
-            
-            if (isPasswordValid) {
+            if (safeInputPassword === safeDbPassword) {
                 const token = jwt.sign({ id: user.ID, username: user.Username }, JWT_SECRET, { expiresIn: '2h' });
                 res.json({ token, user: { id: user.ID, username: user.Username } });
             } else {
@@ -96,41 +82,25 @@ app.post('/api/login', loginLimiter, async (req, res) => {
 app.post('/api/users', authenticateToken, async (req, res) => {
     const { username, password } = req.body;
     
-    // Basic validation
-    if (!username || !password) {
-        return res.status(400).json({ error: "Username and password are required" });
-    }
-    
-    if (password.length < 6) {
-        return res.status(400).json({ error: "Password must be at least 6 characters long" });
-    }
-    
     try {
-        // Hash the password
-        const hashedPassword = await bcrypt.hash(password, 10);
-        
-        const queryText = `INSERT INTO Users (Username, Password) VALUES (@username, @password)`;
         await sql.execute({ 
-            query: queryText,
+            procedure: "sp_InsertUser",
             params: {
-                username: { val: username, type: sql.VARCHAR(255) },
-                password: { val: hashedPassword, type: sql.VARCHAR(255) }
+                username: { val: username, type: sql.VARCHAR },
+                password: { val: password, type: sql.VARCHAR }
             }
         });
         res.status(201).json({ message: "User created" });
     } catch (error) {
         console.error("Create user error:", error);
-        if (error.message && error.message.includes('Unique')) {
-            return res.status(409).json({ error: "Username already exists" });
-        }
         res.status(500).json({ error: "Server error" });
     }
 });
 
 app.get('/api/users', authenticateToken, async (req, res) => {
     try {
-        const result = await sql.execute({ query: 'SELECT ID, Username FROM Users' });
-        res.json(result);
+        const result = await sql.execute({ procedure: 'sp_GetUsers' });
+        res.json(extractData(result));
     } catch (error) {
         res.status(500).send("Server error");
     }
@@ -140,14 +110,13 @@ app.get('/api/users', authenticateToken, async (req, res) => {
 app.get('/api/customers', authenticateToken, async (req, res) => {
     const searchName = req.query.name || '';
     try {
-        const queryText = `SELECT * FROM Customers WHERE FirstName LIKE @searchName OR LastName LIKE @searchName ORDER BY RegistrationDate DESC`;
         const result = await sql.execute({ 
-            query: queryText,
+            procedure: "sp_SearchCustomers",
             params: {
-                searchName: { val: `%${searchName}%`, type: sql.VARCHAR(255) }
+                searchName: { val: `%${searchName}%`, type: sql.VARCHAR }
             }
         });
-        res.json(result);
+        res.json(extractData(result));
     } catch (error) {
         console.error("Fetch customers error:", error);
         res.status(500).json({ error: "Server error" });
@@ -157,19 +126,13 @@ app.get('/api/customers', authenticateToken, async (req, res) => {
 app.post('/api/customers', authenticateToken, async (req, res) => {
     const { firstName, lastName, email } = req.body;
     
-    // Basic validation
-    if (!firstName || !lastName) {
-        return res.status(400).json({ error: "First name and last name are required" });
-    }
-    
     try {
-        const queryText = `INSERT INTO Customers (FirstName, LastName, Email) VALUES (@firstName, @lastName, @email)`;
         await sql.execute({ 
-            query: queryText,
+            procedure: "sp_InsertCustomer",
             params: {
-                firstName: { val: firstName, type: sql.VARCHAR(255) },
-                lastName: { val: lastName, type: sql.VARCHAR(255) },
-                email: { val: email || null, type: sql.VARCHAR(255) }
+                firstName: { val: firstName, type: sql.VARCHAR },
+                lastName: { val: lastName, type: sql.VARCHAR },
+                email: { val: email || null, type: sql.VARCHAR }
             }
         });
         res.status(201).json({ message: "Customer added" });
@@ -182,15 +145,9 @@ app.post('/api/customers', authenticateToken, async (req, res) => {
 app.delete('/api/customers/:id', authenticateToken, async (req, res) => {
     const customerId = req.params.id;
     
-    // Validate ID is a number
-    if (isNaN(customerId)) {
-        return res.status(400).json({ error: "Invalid customer ID" });
-    }
-    
     try {
-        const queryText = `DELETE FROM Customers WHERE ID = @id`;
         await sql.execute({ 
-            query: queryText,
+            procedure: "sp_DeleteCustomer",
             params: {
                 id: { val: customerId, type: sql.INT }
             }
@@ -205,17 +162,8 @@ app.delete('/api/customers/:id', authenticateToken, async (req, res) => {
 // TASKS ROUTES
 app.get('/api/tasks', authenticateToken, async (req, res) => {
     try {
-        const queryText = `
-            SELECT t.ID, t.Description, t.StartDate, t.EndDate, t.Status,
-                   c.FirstName + ' ' + c.LastName AS CustomerName,
-                   u.Username AS EmployeeName
-            FROM Tasks t
-            INNER JOIN Customers c ON t.CustomerID = c.ID
-            INNER JOIN Users u ON t.EmployeeID = u.ID
-            ORDER BY t.StartDate DESC
-        `;
-        const result = await sql.execute({ query: queryText });
-        res.json(result);
+        const result = await sql.execute({ procedure: 'sp_GetTasks' });
+        res.json(extractData(result));
     } catch (error) {
         res.status(500).send("Server error");
     }
@@ -224,26 +172,13 @@ app.get('/api/tasks', authenticateToken, async (req, res) => {
 app.post('/api/tasks', authenticateToken, async (req, res) => {
     const { customerId, employeeId, description, endDate } = req.body;
     
-    // Validate required fields
-    if (!customerId || !employeeId || !description) {
-        return res.status(400).json({ error: "customerId, employeeId, and description are required" });
-    }
-    
-    if (isNaN(customerId) || isNaN(employeeId)) {
-        return res.status(400).json({ error: "Invalid customerId or employeeId" });
-    }
-    
     try {
-        const queryText = `
-            INSERT INTO Tasks (CustomerID, EmployeeID, Description, EndDate)
-            VALUES (@customerId, @employeeId, @description, @endDate)
-        `;
         await sql.execute({ 
-            query: queryText,
+            procedure: "sp_InsertTask",
             params: {
                 customerId: { val: customerId, type: sql.INT },
                 employeeId: { val: employeeId, type: sql.INT },
-                description: { val: description, type: sql.VARCHAR(500) },
+                description: { val: description, type: sql.VARCHAR },
                 endDate: { val: endDate || null, type: sql.DATETIME }
             }
         });
@@ -257,16 +192,11 @@ app.post('/api/tasks', authenticateToken, async (req, res) => {
 app.put('/api/tasks/:id/complete', authenticateToken, async (req, res) => {
     const taskId = req.params.id;
     
-    if (isNaN(taskId)) {
-        return res.status(400).json({ error: "Invalid task ID" });
-    }
-    
     try {
-        const queryText = `UPDATE Tasks SET Status = @status WHERE ID = @id`;
         await sql.execute({ 
-            query: queryText,
+            procedure: "sp_CompleteTask",
             params: {
-                status: { val: 'Ολοκληρωμένο', type: sql.NVARCHAR(50) },
+                status: { val: 'Ολοκληρωμένο', type: sql.NVARCHAR },
                 id: { val: taskId, type: sql.INT }
             }
         });
@@ -280,14 +210,9 @@ app.put('/api/tasks/:id/complete', authenticateToken, async (req, res) => {
 app.delete('/api/tasks/:id', authenticateToken, async (req, res) => {
     const taskId = req.params.id;
     
-    if (isNaN(taskId)) {
-        return res.status(400).json({ error: "Invalid task ID" });
-    }
-    
     try {
-        const queryText = `DELETE FROM Tasks WHERE ID = @id`;
         await sql.execute({ 
-            query: queryText,
+            procedure: "sp_DeleteTask",
             params: {
                 id: { val: taskId, type: sql.INT }
             }
@@ -302,8 +227,8 @@ app.delete('/api/tasks/:id', authenticateToken, async (req, res) => {
 // CATEGORIES ROUTE
 app.get('/api/categories', authenticateToken, async (req, res) => {
     try {
-        const result = await sql.execute({ query: 'SELECT * FROM Categories ORDER BY Name' });
-        res.json(result);
+        const result = await sql.execute({ procedure: 'sp_GetCategories' });
+        res.json(extractData(result));
     } catch (error) {
         res.status(500).send("Server error");
     }
@@ -313,28 +238,14 @@ app.get('/api/categories', authenticateToken, async (req, res) => {
 app.get('/api/customers/:id/interactions', authenticateToken, async (req, res) => {
     const customerId = req.params.id;
     
-    if (isNaN(customerId)) {
-        return res.status(400).json({ error: "Invalid customer ID" });
-    }
-    
     try {
-        const queryText = `
-            SELECT i.ID, i.InteractionDate, i.Notes,
-                   u.Username AS EmployeeName,
-                   cat.Name AS CategoryName
-            FROM Interactions i
-            INNER JOIN Users u ON i.EmployeeID = u.ID
-            INNER JOIN Categories cat ON i.CategoryID = cat.ID
-            WHERE i.CustomerID = @customerId
-            ORDER BY i.InteractionDate DESC
-        `;
         const result = await sql.execute({ 
-            query: queryText,
+            procedure: "sp_GetCustomerInteractions",
             params: {
                 customerId: { val: customerId, type: sql.INT }
             }
         });
-        res.json(result);
+        res.json(extractData(result));
     } catch (error) {
         console.error("Fetch interactions error:", error);
         res.status(500).json({ error: "Server error" });
@@ -346,26 +257,14 @@ app.post('/api/customers/:id/interactions', authenticateToken, async (req, res) 
     const employeeId = req.user.id; 
     const { categoryId, notes } = req.body;
     
-    if (isNaN(customerId) || isNaN(categoryId)) {
-        return res.status(400).json({ error: "Invalid customer ID or category ID" });
-    }
-    
-    if (!notes) {
-        return res.status(400).json({ error: "Notes are required" });
-    }
-
     try {
-        const queryText = `
-            INSERT INTO Interactions (CustomerID, EmployeeID, CategoryID, Notes)
-            VALUES (@customerId, @employeeId, @categoryId, @notes)
-        `;
         await sql.execute({ 
-            query: queryText,
+            procedure: "sp_InsertInteraction",
             params: {
                 customerId: { val: customerId, type: sql.INT },
                 employeeId: { val: employeeId, type: sql.INT },
                 categoryId: { val: categoryId, type: sql.INT },
-                notes: { val: notes, type: sql.VARCHAR(500) }
+                notes: { val: notes, type: sql.VARCHAR }
             }
         });
         res.status(201).json({ message: "Interaction logged" });
@@ -375,7 +274,7 @@ app.post('/api/customers/:id/interactions', authenticateToken, async (req, res) 
     }
 });
 
-const PORT = process.env.PORT || 3000;
+const PORT = 3000;
 app.listen(PORT, () => {
     console.log(`Server is running on port ${PORT}`);
 });
